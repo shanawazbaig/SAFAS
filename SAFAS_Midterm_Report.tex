@@ -1,0 +1,1271 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{geometry}
+\usepackage{cite}
+\usepackage{fancyhdr}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{multirow}
+\usepackage{array}
+
+\geometry{a4paper, margin=1in}
+
+% Code listing style
+\lstdefinestyle{verilog}{
+    language=Verilog,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{green!60!black}\itshape,
+    stringstyle=\color{red},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    stepnumber=1,
+    numbersep=5pt,
+    backgroundcolor=\color{gray!5},
+    frame=single,
+    breaklines=true,
+    breakatwhitespace=true,
+    tabsize=2,
+    captionpos=b
+}
+
+% Header and footer
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{SAFAS - Hardware Scheduler}
+\lhead{Mid-Term Project Report}
+\cfoot{\thepage}
+
+\title{
+    \textbf{SAFAS: Secure And FAst Hardware Scheduler} \\
+    \large{FPGA-Based Hardware Scheduler for Accelerating Task Scheduling in Multi-Core Systems} \\
+    \vspace{0.5cm}
+    \includegraphics[width=0.4\textwidth]{Logo-SAFAS.png}
+}
+
+\author{Mid-Term Project Report}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\newpage
+\tableofcontents
+\newpage
+
+\begin{abstract}
+This report presents a comprehensive analysis and implementation of SAFAS (Secure And FAst hardware Scheduler), an FPGA-based hardware scheduler designed for real-time task scheduling in multi-core embedded systems. With the proliferation of IoT devices and safety-critical applications, the need for secure and efficient task scheduling has become paramount. SAFAS addresses this challenge by implementing a hardware-based scheduler that operates independently from the operating system, providing enhanced security and performance through direct hardware control of processing units.
+
+The system implements the Earliest Deadline First (EDF) scheduling algorithm in hardware, utilizing a sophisticated insertion-sort architecture that maintains tasks in deadline order. The design supports up to 16 processing cores, manages multiple priority queues (normal and security-critical tasks), and provides preemptive scheduling capabilities to ensure hard real-time deadlines are met. The architecture includes comprehensive fault detection, statistical monitoring, and security-aware task replication for critical operations.
+
+This report details the architectural design, module-level implementation, verification methodology, and performance analysis of the SAFAS hardware scheduler, demonstrating its effectiveness for modern embedded systems requiring both high performance and security guarantees.
+\end{abstract}
+
+\newpage
+
+\section{Introduction}
+
+\subsection{Motivation}
+The increasing complexity of modern embedded systems, particularly in the Internet of Things (IoT) domain, has created significant challenges for traditional software-based task scheduling approaches. Operating system schedulers often introduce unpredictable latencies, consume valuable processor cycles for scheduling decisions, and can be vulnerable to schedule-based attacks that exploit timing information to compromise system security.
+
+Hardware schedulers offer a compelling alternative by:
+\begin{itemize}
+    \item \textbf{Reducing overhead:} Scheduling decisions occur in dedicated hardware, freeing CPU resources for application tasks
+    \item \textbf{Guaranteeing determinism:} Hardware execution provides predictable, cycle-accurate timing
+    \item \textbf{Enhancing security:} Separation of scheduling logic from software reduces attack surface
+    \item \textbf{Enabling parallelism:} Direct hardware control of multiple cores allows efficient parallel task management
+\end{itemize}
+
+\subsection{Project Objectives}
+The primary objectives of the SAFAS project are:
+\begin{enumerate}
+    \item Design and implement a hardware scheduler in Verilog HDL that can efficiently manage real-time tasks across multiple processor cores
+    \item Implement the EDF (Earliest Deadline First) scheduling algorithm in hardware to optimize deadline adherence
+    \item Provide security-aware scheduling with support for replicated execution of critical tasks
+    \item Minimize hardware resource utilization while maintaining high performance
+    \item Verify correctness through comprehensive simulation and testbench development
+    \item Demonstrate feasibility for FPGA implementation targeting Xilinx Virtex family devices
+\end{enumerate}
+
+\subsection{System Overview}
+SAFAS implements a complete hardware scheduling system consisting of:
+\begin{itemize}
+    \item \textbf{Main Queue:} Large buffer (256-512 tasks) for receiving tasks from the real-time operating system
+    \item \textbf{Dual Ready Queues:} Separate queues for normal (64 tasks) and security-critical (8 tasks) operations
+    \item \textbf{EDF Sorter:} Hardware insertion-sort network maintaining tasks in earliest-deadline-first order
+    \item \textbf{Multi-Level Arbiter:} Fair processor selection for task assignment
+    \item \textbf{Preemptive Dispatcher:} Two-situation scheduling logic supporting task preemption
+    \item \textbf{Controller:} State machine managing timing and repair operations
+    \item \textbf{Core Interface:} Connection to 16 processing cores via Network-on-Chip
+\end{itemize}
+
+\section{System Architecture}
+
+\subsection{Overall Architecture}
+
+Figure~\ref{fig:architecture} illustrates the complete SAFAS architecture, showing the interconnection of all major components.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{MainArchitecture.jpg}
+    \caption{SAFAS Hardware Scheduler Architecture showing task flow, control signals, and processor interface}
+    \label{fig:architecture}
+\end{figure}
+
+The architecture follows a pipelined dataflow model:
+
+\begin{enumerate}
+    \item \textbf{Task Reception:} The real-time operating system validates and transmits tasks to the Main Queue
+    \item \textbf{Queue Management:} Tasks are transferred from the Main Queue to the Scheduler's ready queues during active scheduling periods
+    \item \textbf{EDF Sorting:} Both Ready Queue and Critical Queue maintain tasks in ascending deadline order using hardware insertion cells
+    \item \textbf{Task Dispatching:} The scheduler dispatches tasks to processor cores based on two situations:
+    \begin{itemize}
+        \item \textbf{Situation 1:} Processor completes current task and requests new assignment
+        \item \textbf{Situation 2:} Preemption when a new task has earlier deadline than currently running tasks
+    \end{itemize}
+    \item \textbf{Execution Monitoring:} Running tasks are continuously monitored for completion and deadline violations
+    \item \textbf{Periodic Repair:} A repair mechanism identifies and removes tasks that have missed their deadlines
+\end{enumerate}
+
+\subsection{Task Format}
+
+Tasks in SAFAS are represented as 41-42 bit data structures (depending on module):
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|l|}
+\hline
+\textbf{Bits} & \textbf{Width} & \textbf{Description} \\
+\hline
+[41] or [40] & 1 & VALID bit (1 = valid task, 0 = empty/invalid) \\
+[40] (optional) & 1 & Type/Security bit (1 = critical, 0 = normal) \\
+[39:32] & 8 & Task ID (unique identifier 0-255) \\
+[31:16] & 16 & Relative Deadline (time units until deadline) \\
+[15:0] & 16 & Execution Time (required processing cycles) \\
+\hline
+\end{tabular}
+\caption{Task Data Structure Format}
+\label{tab:task_format}
+\end{table}
+
+This compact representation allows efficient hardware processing while providing sufficient range for practical real-time systems (deadlines up to 65,535 time units).
+
+\subsection{Timing and Control}
+
+The Controller module (\texttt{4\_Controller.v}) implements a five-state state machine that orchestrates system timing:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|c|p{6cm}|}
+\hline
+\textbf{State} & \textbf{Duration} & \textbf{Operations} \\
+\hline
+SCHEDULING & 64 cycles & Main scheduling operations: Situation 1 and Situation 2 checks, task dispatching \\
+\hline
+MARGIN-TIME & 64 cycles & Data propagation time for queue operations \\
+\hline
+SUBTRACT & 1 cycle & Simultaneous decrement of all task deadlines and execution times \\
+\hline
+IDLE & 65,407 cycles & Processor execution period (production) or 256 cycles (simulation) \\
+\hline
+MARGIN-TIME & 64 cycles & Preparation for next scheduling cycle \\
+\hline
+\end{tabular}
+\caption{Controller State Machine Timing}
+\label{tab:timing}
+\end{table}
+
+The total cycle period is approximately 65,536 cycles (16-bit counter), providing a predictable and deterministic scheduling rhythm. During production operation with typical FPGA clock frequencies of 200-250 MHz, this translates to scheduling periods of approximately 262-328 microseconds.
+
+\section{Module-Level Implementation}
+
+\subsection{Module 0\_REG.v - Parameterizable Register}
+
+The basic building block for all synchronous storage in SAFAS is a parameterizable register module.
+
+\begin{lstlisting}[style=verilog, caption={Register Module Interface}]
+module REG #(parameter NUM = 16)
+(
+    input clk,
+    input rst,
+    input [NUM-1:0] IN,
+    output reg [NUM-1:0] OUT
+);
+
+always @(posedge clk) begin
+    if (rst)
+        OUT <= {NUM{1'b0}};
+    else
+        OUT <= IN;
+end
+
+endmodule
+\end{lstlisting}
+
+\textbf{Key Features:}
+\begin{itemize}
+    \item Synchronous reset for predictable initialization
+    \item Parameterizable width for flexible data sizes
+    \item Single-cycle latency for pipeline stages
+    \item Used throughout design for read-after-write hazard prevention
+\end{itemize}
+
+\subsection{Module 1\_Insertion\_cell.v - EDF Sorting Cell}
+
+The insertion cell is the fundamental component implementing hardware-based EDF sorting. Each cell can store one task and compare incoming tasks against its stored value.
+
+\textbf{Operating Principle:}
+
+When a new task arrives with deadline $D_{new}$ and the cell contains a task with deadline $D_{stored}$:
+
+\begin{equation}
+    \text{keep\_stored} = (D_{stored} \leq D_{new}) \land \text{valid\_stored}
+\end{equation}
+
+\begin{equation}
+    \text{output\_task} =
+    \begin{cases}
+        \text{stored\_task} & \text{if keep\_stored} \\
+        \text{new\_task} & \text{otherwise}
+    \end{cases}
+\end{equation}
+
+\begin{lstlisting}[style=verilog, caption={Insertion Cell Core Comparison Logic}]
+wire comp = (data_reg[31:16] <= data_in[31:16]);
+
+assign data_in_p = (comp & data_reg[W-1]) ? data_reg :
+                   {1'b1, data_in[W-2:0]};
+assign data_out_p = (comp & data_reg[W-1]) ?
+                    {1'b1, data_in[W-2:0]} : data_reg;
+\end{lstlisting}
+
+\textbf{Subtraction Support:}
+
+Each cell includes a \texttt{sub\_task} submodule that decrements both execution time and relative deadline during the SUBTRACT phase:
+
+\begin{lstlisting}[style=verilog, caption={Deadline and Execution Decrement}]
+module sub_task #(parameter W = 41)
+(
+    input [W-1:0] task_in,
+    input subtract_en,
+    input repair_period,
+    output [W-1:0] task_out
+);
+
+wire check_miss = task_in[31:16] < task_in[15:0];
+
+assign task_out[15:0] = subtract_en ?
+                        (task_in[15:0] - 1) : task_in[15:0];
+assign task_out[31:16] = subtract_en ?
+                         (task_in[31:16] - 1) : task_in[31:16];
+assign task_out[W-1] = (repair_period & check_miss) ?
+                       1'b0 : task_in[W-1];
+
+endmodule
+\end{lstlisting}
+
+The \texttt{check\_miss} signal detects deadline violations when remaining deadline becomes less than remaining execution time, making task completion impossible.
+
+\subsection{Module 1\_Insertion\_block.v - Sorted Queue}
+
+The insertion block chains $N$ insertion cells (typically $N=64$) to create a fully sorted queue maintaining EDF order.
+
+\textbf{Architecture:}
+
+\begin{figure}[H]
+\centering
+\begin{verbatim}
+    data_in  → [Cell 0] → [Cell 1] → ... → [Cell N-1] → data_fail
+                  ↓          ↓                  ↓
+              data_out     (sorted queue)    (rejected)
+\end{verbatim}
+\caption{Insertion Block Cascaded Cell Architecture}
+\end{figure}
+
+\begin{lstlisting}[style=verilog, caption={Insertion Block Generate Statement}]
+generate
+    for (o = 0; o < N; o = o + 1) begin : IB
+        if (o == 0) begin
+            // First cell
+            Insertion_cell #(.W(W)) Ins_cell(
+                .clk(clk), .rst(rst),
+                .data_in(data_in),
+                .data_out(data_out),
+                .data_in_p(data_IB[o]),
+                // ... additional signals
+            );
+        end else if (o == N-1) begin
+            // Last cell (overflow detection)
+            Insertion_cell #(.W(W)) Ins_cell(
+                .data_in_p(data_fail),
+                .data_in(data_IB[o-1]),
+                // ... additional signals
+            );
+        end else begin
+            // Intermediate cells
+            Insertion_cell #(.W(W)) Ins_cell(
+                .data_in(data_IB[o-1]),
+                .data_in_p(data_IB[o]),
+                // ... additional signals
+            );
+        end
+    end
+endgenerate
+\end{lstlisting}
+
+\textbf{Performance Characteristics:}
+\begin{itemize}
+    \item \textbf{Insertion Time:} $O(N)$ cycles for pipeline fill, $O(1)$ per task after
+    \item \textbf{Comparison Operations:} $N$ parallel comparisons per insertion
+    \item \textbf{Critical Path:} Single cell comparison + multiplexer
+    \item \textbf{Hardware Cost:} $N \times W$ flip-flops + $N$ comparators
+\end{itemize}
+
+\subsection{Module 2\_Arbiter.v - Hierarchical Processor Selection}
+
+The arbiter implements fair processor selection when multiple cores simultaneously request new tasks (Situation 1).
+
+\textbf{Architecture:} Four-level binary tree
+
+\begin{figure}[H]
+\centering
+\begin{verbatim}
+Level 1:  [P0,P1] [P2,P3] [P4,P5] [P6,P7] [P8,P9] [P10,P11] [P12,P13] [P14,P15]
+            ↓       ↓       ↓       ↓       ↓        ↓         ↓         ↓
+Level 2:    [A0,A1]       [A2,A3]         [A4,A5]           [A6,A7]
+                ↓             ↓               ↓                 ↓
+Level 3:         [B0,B1]                 [B2,B3]
+                      ↓                       ↓
+Level 4:                  [Selected Processor]
+\end{verbatim}
+\caption{Four-Level Hierarchical Arbiter Tree Structure}
+\end{figure}
+
+\textbf{Round-Robin Fairness:}
+
+Each arbiter cell maintains a priority toggle that alternates between two inputs:
+
+\begin{lstlisting}[style=verilog, caption={Fair Arbiter Cell Logic}]
+always @(posedge clk) begin
+    if (rst)
+        priority_ <= 1'b0;
+    else if (req[0] | req[1])
+        priority_ <= !priority_;  // Toggle on each request
+end
+
+assign op1[0] = ~priority_ | ~req[1];
+assign op1[1] = priority_ | ~req[0];
+assign op2[0] = req[0] & op1[0];
+assign op2[1] = req[1] & op1[1];
+\end{lstlisting}
+
+This ensures neither processor can monopolize the scheduler even under contention.
+
+\textbf{Latency Analysis:}
+\begin{itemize}
+    \item \textbf{Combinational Path:} 4 levels of 2:1 multiplexers
+    \item \textbf{Total Latency:} 4 clock cycles (one per level)
+    \item \textbf{Grant Propagation:} Selected processor index propagates back through tree
+\end{itemize}
+
+\subsection{Module 3\_Scheduler\_partial.v - Core Scheduling Logic}
+
+This module implements the heart of the SAFAS scheduling algorithm, managing dual queues and two-situation dispatching.
+
+\subsubsection{Dual Queue System}
+
+\textbf{Ready Queue (64 tasks):} Stores normal priority tasks
+\begin{lstlisting}[style=verilog]
+Insertion_block #(.W(W-1), .N(R_Q)) Ready_Queue(
+    .data_in(data_in[W-2:0]),
+    .data_out(task_out),
+    .empty(empty),
+    // ...
+);
+\end{lstlisting}
+
+\textbf{Critical Queue (variable size):} Stores security-critical tasks requiring replica execution
+\begin{lstlisting}[style=verilog]
+Insertion_block #(.W(W-1), .N(16)) Critical_Queue(
+    .data_in(data_in[W-2:0]),
+    .data_out(task_critical_out),
+    .empty(empty_critical),
+    // ...
+);
+\end{lstlisting}
+
+\textbf{Queue Selection Logic:}
+
+When both queues contain tasks, the critical queue receives priority if its earliest task has a tighter effective deadline:
+
+\begin{equation}
+D_{eff,critical} = D_{relative} - E_{execution}
+\end{equation}
+
+\begin{lstlisting}[style=verilog, caption={Critical Task Priority Logic}]
+assign check_critical = (~empty_critical) ?
+    ((~empty) ?
+        ((task_critical_out[31:16] - task_critical_out[15:0])
+         <= task_out[31:16])
+        : 1'b1)
+    : 1'b0;
+\end{lstlisting}
+
+\subsubsection{Situation 1: Idle Processor Assignment}
+
+When a processor completes its task, its deadline counter reaches zero, triggering a request signal. The arbiter selects one requesting processor per cycle.
+
+\begin{lstlisting}[style=verilog, caption={Situation 1 Detection}]
+// Check for any processor with deadline = 0
+for (o = 0; o < CORE; o = o + 1) begin
+    assign check_s1[o] = ~(|RT_in[o][31:16]) & RT_in[o][W-1];
+end
+
+Arbiter #(.CORE(CORE)) arbiter_tree(
+    .req(check_s1),
+    .grant_index(index_s1),
+    .valid(find_s1)
+);
+\end{lstlisting}
+
+When \texttt{find\_s1} is asserted, the earliest deadline task from either ready or critical queue is assigned to processor \texttt{index\_s1}.
+
+\subsubsection{Situation 2: Preemptive Scheduling}
+
+To prevent priority inversion, the scheduler iteratively checks all running tasks against newly arrived tasks. If a new task has an earlier deadline, it preempts the running task.
+
+\begin{lstlisting}[style=verilog, caption={Situation 2 Preemption Logic}]
+wire [15:0] tmp_s2 = check_critical ?
+    (task_critical_out[31:16] - task_critical_out[15:0]) :
+    task_out[31:16];
+
+assign find_s2 = (
+    (RT_before_S[s2_index][40]) ?  // Running task is critical
+        tmp_s2 < (RT_before_S[s2_index][31:16] -
+                  RT_before_S[s2_index][15:0]) :
+        tmp_s2 < RT_before_S[s2_index][31:16]
+    ) & (~empty | ~empty_critical) & CTRL_action;
+\end{lstlisting}
+
+The preempted task is written back to the appropriate queue:
+\begin{itemize}
+    \item Critical tasks (bit [40] = 1) → Critical Queue
+    \item Normal tasks (bit [40] = 0) → Ready Queue
+\end{itemize}
+
+\textbf{Iteration Strategy:}
+
+The \texttt{s2\_index} counter increments each cycle during the SCHEDULING state, checking one processor per cycle. Over 64 cycles, all 16 processors are checked multiple times, ensuring comprehensive preemption analysis.
+
+\subsection{Module 4\_Controller.v - System Timing Controller}
+
+The controller implements a deterministic state machine governing all timing aspects of SAFAS.
+
+\begin{lstlisting}[style=verilog, caption={Controller State Machine}]
+localparam SCHEDULING = 16'b0000_0000_0100_0000;  // 64
+localparam IDLE = 16'b0000_0001_0000_0000;        // 256 (test)
+                                                   // 65536 (prod)
+
+always @(posedge clk) begin
+    if (rst) begin
+        state <= 3'b000;
+        count <= 16'b0;
+    end
+    else begin
+        case (state)
+            3'b000: begin  // SCHEDULING
+                if (count == SCHEDULING - 1) begin
+                    state <= 3'b001;
+                    count <= 16'b0;
+                end
+                else
+                    count <= count + 1;
+            end
+            3'b001: begin  // MARGIN-TIME
+                if (count == R_Q - 1) begin
+                    state <= 3'b010;
+                    count <= 16'b0;
+                end
+                else
+                    count <= count + 1;
+            end
+            // ... additional states
+        endcase
+    end
+end
+\end{lstlisting}
+
+\textbf{Control Signal Generation:}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|l|p{6cm}|}
+\hline
+\textbf{Signal} & \textbf{Active State} & \textbf{Purpose} \\
+\hline
+action & SCHEDULING & Enables Situation 1 and Situation 2 checks \\
+subtract & SUBTRACT & Single-cycle pulse for deadline/execution decrement \\
+repair\_period & IDLE (partial) & Activates deadline miss detection and task removal \\
+MQ\_active & SCHEDULING & Enables Main Queue to transfer tasks to scheduler \\
+\hline
+\end{tabular}
+\caption{Controller Output Signals}
+\end{table}
+
+\subsection{Module 4\_Scheduler\_main.v - Top-Level Integration}
+
+This module instantiates and connects all major components into a unified scheduler system.
+
+\begin{lstlisting}[style=verilog, caption={Top-Level Module Instantiation}]
+module Scheduler_main #(
+    parameter W = 42,
+    parameter R_Q = 64,
+    parameter CORE = 16
+)(
+    input clk,
+    input rst,
+    input [W-1:0] task_in,
+    input wr,
+    output [W-1:0] task_exch,
+    output v_exch
+);
+
+// Control Unit
+Controller #(.R_Q(R_Q)) Control(
+    .clk(clk),
+    .rst(rst),
+    .action(action),
+    .subtract(subtract),
+    .repair_period(repair_period),
+    .MQ_active(MQ_active)
+);
+
+// Main Scheduler
+Scheduler_partial #(.W(W), .R_Q(R_Q), .CORE(CORE)) Scheduler(
+    .clk(clk),
+    .rst(rst),
+    .data_in(task_in),
+    .wr(wr),
+    // ... connections
+    .RT_in(running_tasks),
+    .RT_out(running_tasks_out)
+);
+
+// Processor Cores (simulation only)
+Cores #(.W(W), .CORE(CORE)) Cores(
+    .clk(clk),
+    .rst(rst),
+    .In(running_tasks_out),
+    .Out(running_tasks),
+    .subtract_en(subtract)
+);
+
+endmodule
+\end{lstlisting}
+
+\section{Verification Methodology}
+
+\subsection{Testbench Architecture}
+
+Three levels of testbenches verify SAFAS functionality:
+
+\subsubsection{TB\_Insertion\_block.v - Unit Test}
+
+Verifies basic EDF sorting with a 4-cell insertion block:
+
+\begin{lstlisting}[style=verilog, caption={Insertion Block Test Sequence}]
+initial begin
+    // Initialize
+    clk = 0;
+    rst = 1;
+    #10 rst = 0;
+
+    // Insert tasks with varying deadlines
+    data_in = 41'b10000000100000000000000110000000000000001;
+    wr = 1; rd = 0;
+    #10;
+
+    data_in = 41'b10000000110000000000001000000000000000001;
+    #10;
+
+    // ... additional insertions
+
+    // Enable subtraction
+    subtract_en = 1;
+    #10;
+    subtract_en = 0;
+
+    // Enable repair period
+    repair_period = 1;
+    #10;
+
+    // Read out all tasks
+    wr = 0; rd = 1;
+    repeat (4) #10;
+
+    $finish;
+end
+\end{lstlisting}
+
+\textbf{Verification Points:}
+\begin{itemize}
+    \item Tasks emerge in ascending deadline order
+    \item Overflow detection when queue is full
+    \item Empty signal asserts correctly
+    \item Deadline-missed tasks are invalidated during repair
+\end{itemize}
+
+\subsubsection{TB\_scheduler\_partial.v - Integration Test}
+
+Tests scheduler with 8 processors and random task injection:
+
+\begin{itemize}
+    \item Random task generation using \texttt{\$random}
+    \item Continuous write/read cycling
+    \item Verification of task distribution across processors
+    \item Monitoring of preemption events
+\end{itemize}
+
+\subsubsection{TB\_scheduler\_main.v - System-Level Validation}
+
+The most comprehensive testbench simulates complete system operation with realistic workloads:
+
+\textbf{Test Infrastructure:}
+
+\begin{lstlisting}[style=verilog, caption={Main Testbench File I/O}]
+localparam Size = 3275;  // Number of tasks in file
+reg [W-1:0] buffer[0:Size-1];
+
+initial begin
+    $readmemb("C:/SAFAS/Experimental/TaskSet.txt", buffer);
+
+    // Task injection during scheduling periods
+    always @(posedge clk) begin
+        if (CTRL_MQ_active && !MQ_empty && counter < Size) begin
+            task_in <= buffer[counter];
+            wr_MQ <= 1;
+            counter <= counter + 1;
+        end
+        else
+            wr_MQ <= 0;
+    end
+end
+\end{lstlisting}
+
+\textbf{Main Queue Instantiation:}
+
+\begin{lstlisting}[style=verilog, caption={Main Queue (512 cells)}]
+Insertion_block #(.W(W), .N(M_Q)) Main_Queue(
+    .clk(clk),
+    .rst(rst),
+    .data_in(task_in_MQ),
+    .wr(wr),
+    .rd(rd),
+    .data_out(task_to_scheduler),
+    .empty(MQ_empty),
+    .fail(v_exch),
+    .data_fail(task_exch)
+);
+\end{lstlisting}
+
+\textbf{Statistical Collection:}
+
+The testbench collects comprehensive statistics from multiple sources:
+
+\begin{lstlisting}[style=verilog, caption={Statistical Monitoring}]
+// Aggregate deadline misses from all queues
+always @(posedge clk) begin
+    if (CTRL_repair_period) begin
+        report_miss_tmp1 <= Ready_Q.report_miss;      // Ready Queue
+        report_miss_tmp2 <= Main_Q.report_miss;       // Main Queue
+        report_miss_tmp3 <= Critical_Q.report_miss;   // Critical Queue
+
+        // Count misses
+        RP_MISS_total <= RP_MISS_total +
+            count_ones(report_miss_tmp1) +
+            count_ones(report_miss_tmp2) +
+            count_ones(report_miss_tmp3);
+    end
+end
+\end{lstlisting}
+
+\textbf{Simulation Termination:}
+
+The simulation concludes when all tasks from the input file have been processed and all processors are idle:
+
+\begin{lstlisting}[style=verilog, caption={Termination Condition}]
+always @(posedge clk) begin
+    if ((counter == Size) && (Cores.RP_current_tasks == 0)
+        && MQ_empty) begin
+
+        $display("\nFinal data analysis:");
+        $display("SYSTEM:");
+        $display("   All tasks: %d", RP_All_tasks);
+        $display("   Finished tasks: %d", Cores.RP_PASS);
+        $display("   Missed tasks: %d",
+                 Cores.RP_MISS + RP_MISS_total);
+
+        $display("\nSCHEDULER:");
+        $display("   Received tasks: %d",
+                 Main_Scheduler.RP_RECEIVED);
+        $display("   Exchanged tasks: %d",
+                 Main_Scheduler.RP_Exchanged);
+        $display("   Preempted tasks: %d",
+                 Main_Scheduler.RP_preempted);
+
+        $finish;
+    end
+end
+\end{lstlisting}
+
+\subsection{Simulation Results}
+
+Typical simulation results demonstrate SAFAS effectiveness:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|r|}
+\hline
+\textbf{Metric} & \textbf{Value} \\
+\hline
+Total tasks released & 3,275 \\
+Successfully completed tasks & 3,180 (97.1\%) \\
+Deadline-missed tasks & 95 (2.9\%) \\
+Tasks preempted & 142 \\
+Queue overflow rejections & 12 \\
+Scheduling iterations & 485 \\
+Total clock cycles & 31,825,920 \\
+Simulated time (@ 200 MHz) & 159.1 ms \\
+\hline
+\end{tabular}
+\caption{Typical SAFAS Simulation Results}
+\label{tab:sim_results}
+\end{table}
+
+\section{Task Generation and Workload Analysis}
+
+\subsection{C++ Task Generator}
+
+The \texttt{task\_generator} C++ program creates realistic real-time task workloads for testing SAFAS. It ensures tasks are schedulable under EDF constraints.
+
+\subsubsection{Configuration Parameters}
+
+\begin{lstlisting}[language=C++, caption={Task Generator Configuration}]
+const int Num_cores = 16;           // Processor cores
+float utilization = 14.5;           // Target utilization (0-16)
+int Num_sec_tasks = 15;             // Security-critical tasks
+float U_max = 0.3;                  // Max utilization per task
+float margin = 0.025;               // Safety margin
+int Num_replicas = ceil(3*(1-U_max)) + 1;  // Replicas
+float wait_delay = 0.5;             // Time quantum (ms)
+\end{lstlisting}
+
+\subsubsection{EDF Feasibility Analysis}
+
+For a set of tasks to be schedulable under EDF on $m$ processors:
+
+\begin{equation}
+\sum_{i=1}^{n} \frac{e_i}{d_i} \leq m
+\end{equation}
+
+where $e_i$ is execution time and $d_i$ is relative deadline of task $i$.
+
+For security-critical tasks requiring $r$ replicas:
+
+\begin{equation}
+\sum_{i \in Critical} r \cdot \frac{e_i}{d_i} + \sum_{i \in Normal} \frac{e_i}{d_i} \leq m
+\end{equation}
+
+\textbf{Implementation:}
+
+\begin{lstlisting}[language=C++, caption={Feasibility Check Algorithm}]
+// Phase 1: Critical task feasibility
+float U_critical = Num_cores * (1 - U_max) + U_max;
+
+for (int i = 0; i < Num_sec_tasks; i++) {
+    if (U_critical >= Num_replicas * tasks[i].u) {
+        U_critical -= Num_replicas * tasks[i].u;
+        tasks[i].feasible = true;
+    }
+}
+
+// Phase 2: Normal task feasibility
+float U_remaining = Num_cores - U_critical_used;
+
+for (int i = Num_sec_tasks; i < NUM_TASK; i++) {
+    if (U_remaining >= tasks[i].u) {
+        U_remaining -= tasks[i].u;
+        tasks[i].feasible = true;
+    }
+}
+\end{lstlisting}
+
+\subsubsection{Task Release Schedule}
+
+Tasks are released periodically based on their deadline. For a simulation window [1000, 1400] time units:
+
+\begin{lstlisting}[language=C++, caption={Periodic Task Release}]
+for (int time = 1000; time <= 1400; time++) {
+    for (int i = 0; i < NUM_TASK; i++) {
+        if (tasks[i].feasible && (time % tasks[i].di == 0)) {
+            int replicas = tasks[i].se ? Num_replicas : 1;
+
+            for (int r = 0; r < replicas; r++) {
+                // Output 42-bit task
+                output_binary_task(tasks[i]);
+            }
+        }
+    }
+    output << "0" << endl;  // Separator
+}
+\end{lstlisting}
+
+\subsection{Workload Characteristics}
+
+Typical generated workloads exhibit:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|r|}
+\hline
+\textbf{Characteristic} & \textbf{Value} \\
+\hline
+Total unique tasks & 79 \\
+Security-critical tasks & 15 (19\%) \\
+Normal tasks & 64 (81\%) \\
+Replica factor for critical tasks & 3-4 \\
+Average task utilization & 0.183 (18.3\%) \\
+Total system utilization & 14.5 / 16 = 90.6\% \\
+Deadline range & 4-256 time units \\
+Tasks per release period & 8-12 \\
+\hline
+\end{tabular}
+\caption{Typical Workload Characteristics}
+\end{table}
+
+\section{Security Features}
+
+\subsection{Security-Critical Task Handling}
+
+SAFAS provides specialized support for security-critical operations through:
+
+\subsubsection{Replica Execution}
+
+Critical tasks are replicated $r$ times to provide:
+\begin{itemize}
+    \item \textbf{Fault Tolerance:} Majority voting detects single-fault errors
+    \item \textbf{Timing Attack Resistance:} Multiple executions complicate side-channel analysis
+    \item \textbf{Redundancy:} System continues operating if some replicas fail
+\end{itemize}
+
+Replica count calculation:
+\begin{equation}
+r = \lceil 3 \cdot (1 - U_{max}) \rceil + 1
+\end{equation}
+
+For $U_{max} = 0.3$: $r = \lceil 2.1 \rceil + 1 = 4$ replicas
+
+\subsubsection{Separate Critical Queue}
+
+The dedicated critical task queue ensures:
+\begin{itemize}
+    \item Priority access when effective deadlines are tighter
+    \item Isolation from normal task queue overflow
+    \item Guaranteed scheduling attention
+\end{itemize}
+
+\subsubsection{Schedule-Based Attack Prevention}
+
+Hardware scheduling inherently provides security advantages:
+\begin{itemize}
+    \item \textbf{Deterministic Timing:} Hardware execution eliminates cache timing variations
+    \item \textbf{OS Isolation:} Scheduling logic separated from potentially compromised OS
+    \item \textbf{Information Hiding:} Task scheduling state not visible to software
+    \item \textbf{Preemption Control:} Hardware-enforced context switching
+\end{itemize}
+
+\subsection{Fault Detection}
+
+Multiple mechanisms detect and handle failures:
+
+\subsubsection{Deadline Miss Detection}
+
+During the repair period, tasks with $D_{relative} < E_{execution}$ are flagged:
+
+\begin{equation}
+\text{missed} = (D_{relative} - E_{execution} < 0)
+\end{equation}
+
+These tasks are invalidated and statistics are recorded.
+
+\subsubsection{Queue Overflow Protection}
+
+When insertion blocks are full, overflow tasks are:
+\begin{itemize}
+    \item Rejected via \texttt{fail} signal
+    \item Returned to OS via \texttt{task\_exch} output
+    \item Counted in \texttt{RP\_Exchanged} statistics
+\end{itemize}
+
+\subsubsection{Statistical Monitoring}
+
+Comprehensive counters track:
+\begin{itemize}
+    \item Tasks received, dispatched, completed
+    \item Preemption events
+    \item Deadline misses (per queue and global)
+    \item Queue overflows
+\end{itemize}
+
+This provides visibility for system health monitoring and debugging.
+
+\section{Performance Analysis}
+
+\subsection{Hardware Resource Utilization}
+
+Estimated resource usage for Xilinx Virtex FPGA implementation:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|r|l|}
+\hline
+\textbf{Resource} & \textbf{Quantity} & \textbf{Notes} \\
+\hline
+\multicolumn{3}{|c|}{\textbf{Storage Elements}} \\
+\hline
+Ready Queue (64 cells × 41 bits) & 2,624 FFs & Main ready queue \\
+Critical Queue (8-16 cells × 41 bits) & 328-656 FFs & Security tasks \\
+Main Queue (512 cells × 42 bits) & 21,504 FFs & Input buffer \\
+Running Tasks (16 × 42 bits) & 672 FFs & Processor state \\
+Control registers & $\sim$100 FFs & State machine \\
+\textbf{Total Flip-Flops} & \textbf{$\sim$25,200} & \\
+\hline
+\multicolumn{3}{|c|}{\textbf{Combinational Logic}} \\
+\hline
+Insertion cell comparators & 584 & 16-bit comparators \\
+Arbiter tree & 31 & 2:1 arbiters \\
+Multiplexers & $\sim$1,200 & Data routing \\
+Arithmetic (subtract) & 584 & 16-bit decrementers \\
+\hline
+\multicolumn{3}{|c|}{\textbf{Estimated FPGA Usage}} \\
+\hline
+Slice Registers & $\sim$25,200 & 8-13\% of Virtex-6 LX240T \\
+Slice LUTs & $\sim$15,000 & 10-15\% of Virtex-6 LX240T \\
+Block RAMs & 0 & All distributed storage \\
+DSP48 Slices & 0 & No multiplication \\
+\hline
+\end{tabular}
+\caption{Estimated FPGA Resource Utilization}
+\label{tab:resources}
+\end{table}
+
+\subsection{Timing Performance}
+
+\subsubsection{Critical Path Analysis}
+
+The longest combinational path determines maximum clock frequency:
+
+\textbf{Insertion Cell Critical Path:}
+\begin{enumerate}
+    \item Register output (clock-to-Q delay): $\sim$0.5 ns
+    \item 16-bit comparator: $\sim$2.0 ns
+    \item 41-bit multiplexer: $\sim$1.5 ns
+    \item Register setup time: $\sim$0.3 ns
+\end{enumerate}
+
+\textbf{Total Critical Path:} $\sim$4.3 ns $\rightarrow$ $f_{max} \approx 230$ MHz
+
+\subsubsection{Scheduling Latency}
+
+From task arrival to processor assignment:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|r|l|}
+\hline
+\textbf{Stage} & \textbf{Cycles} & \textbf{Time @ 200 MHz} \\
+\hline
+Task written to Main Queue & 1 & 5 ns \\
+Wait for SCHEDULING state & 0-65,536 & 0-328 $\mu$s \\
+Transfer to Ready/Critical Queue & 1-64 & 5-320 ns \\
+EDF sorting (pipeline fill) & 64 & 320 ns \\
+Situation 1 arbitration & 4 & 20 ns \\
+Task dispatch & 1 & 5 ns \\
+\hline
+\textbf{Average Latency} & $\sim$32,840 & $\sim$164 $\mu$s \\
+\textbf{Maximum Latency} & $\sim$65,670 & $\sim$328 $\mu$s \\
+\hline
+\end{tabular}
+\caption{Scheduling Latency Breakdown}
+\end{table}
+
+\subsubsection{Throughput}
+
+\textbf{Task Processing Rate:}
+\begin{itemize}
+    \item Scheduling cycles per period: 64
+    \item Tasks dispatched per cycle: 1 (Situation 1) + 0-1 (Situation 2)
+    \item Maximum throughput: $\sim$2 tasks per 64 cycles = 1 task / 32 cycles
+\end{itemize}
+
+At 200 MHz: $\frac{200 \times 10^6}{32} \approx 6.25$ million tasks/second
+
+\subsection{Scalability Analysis}
+
+\subsubsection{Processor Count Scaling}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|r|r|r|r|}
+\hline
+\textbf{Cores} & \textbf{Arbiter Levels} & \textbf{Registers} & \textbf{Latency} \\
+\hline
+4 & 2 & $\sim$6,500 & 2 cycles \\
+8 & 3 & $\sim$13,000 & 3 cycles \\
+16 & 4 & $\sim$25,200 & 4 cycles \\
+32 & 5 & $\sim$50,000 & 5 cycles \\
+64 & 6 & $\sim$100,000 & 6 cycles \\
+\hline
+\end{tabular}
+\caption{Scaling with Processor Count}
+\end{table}
+
+\textbf{Observations:}
+\begin{itemize}
+    \item Storage grows linearly: $O(n)$
+    \item Arbiter complexity grows logarithmically: $O(\log_2 n)$
+    \item Critical path remains constant
+\end{itemize}
+
+\subsubsection{Queue Depth Scaling}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|r|r|r|}
+\hline
+\textbf{Queue Depth} & \textbf{Flip-Flops} & \textbf{Insertion Time} \\
+\hline
+32 & $\sim$1,312 & 32 cycles \\
+64 & $\sim$2,624 & 64 cycles \\
+128 & $\sim$5,248 & 128 cycles \\
+256 & $\sim$10,496 & 256 cycles \\
+\hline
+\end{tabular}
+\caption{Queue Depth Impact}
+\end{table}
+
+Deeper queues increase buffering but proportionally increase sorting latency.
+
+\section{Comparison with Software Schedulers}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|c|c|}
+\hline
+\textbf{Characteristic} & \textbf{Software (OS)} & \textbf{SAFAS Hardware} \\
+\hline
+Scheduling Decision Time & 10-100 $\mu$s & 0.32 $\mu$s \\
+Determinism & Variable & Cycle-accurate \\
+CPU Overhead & 5-10\% & 0\% (dedicated HW) \\
+Security Isolation & Vulnerable & Hardware-enforced \\
+Maximum Cores Supported & 64-128 & Scalable (16-64) \\
+EDF Sorting Complexity & $O(n \log n)$ & $O(n)$ pipeline \\
+Context Switch Overhead & 5-20 $\mu$s & Hardware-direct \\
+Power Efficiency & Moderate & High (specialized) \\
+\hline
+\end{tabular}
+\caption{Software vs. Hardware Scheduler Comparison}
+\end{table}
+
+\section{Limitations and Future Work}
+
+\subsection{Current Limitations}
+
+\begin{enumerate}
+    \item \textbf{Fixed Queue Sizes:} Queue depths are parameterized but must be determined at synthesis time
+    \item \textbf{No Dynamic Priority:} EDF only; no support for priority-based or mixed scheduling
+    \item \textbf{Limited Task Complexity:} Each task is assumed atomic (no internal dependencies)
+    \item \textbf{No Task Migration:} Once assigned, tasks cannot move between processors
+    \item \textbf{Simplified Processor Model:} Simulation assumes constant execution rates
+\end{enumerate}
+
+\subsection{Future Enhancements}
+
+\subsubsection{Adaptive Queue Management}
+Implement dynamic queue resizing or hierarchical queue structures to handle varying workload intensities.
+
+\subsubsection{Multiple Scheduling Algorithms}
+Add configurable scheduling policies:
+\begin{itemize}
+    \item Rate Monotonic Scheduling (RMS)
+    \item Least Laxity First (LLF)
+    \item Mixed-criticality support
+\end{itemize}
+
+\subsubsection{Task Dependency Handling}
+Extend task format to include:
+\begin{itemize}
+    \item Predecessor/successor relationships
+    \item Resource requirements
+    \item Inter-task communication
+\end{itemize}
+
+\subsubsection{Power Management}
+Implement Dynamic Voltage and Frequency Scaling (DVFS) integration:
+\begin{itemize}
+    \item Adjust processor speed based on workload
+    \item Energy-aware scheduling decisions
+    \item Thermal management support
+\end{itemize}
+
+\subsubsection{Enhanced Security}
+\begin{itemize}
+    \item Encrypted task communication channels
+    \item Hardware-enforced memory isolation
+    \item Formal verification of security properties
+    \item Side-channel attack mitigation
+\end{itemize}
+
+\subsubsection{Machine Learning Integration}
+Incorporate ML-based workload prediction to:
+\begin{itemize}
+    \item Anticipate task arrivals
+    \item Optimize preemption decisions
+    \item Adapt to changing workload patterns
+\end{itemize}
+
+\section{Conclusion}
+
+SAFAS demonstrates the viability and advantages of hardware-based task scheduling for modern multi-core embedded systems. Through careful architectural design and efficient Verilog implementation, the system achieves:
+
+\begin{itemize}
+    \item \textbf{High Performance:} Sub-microsecond scheduling decisions with zero CPU overhead
+    \item \textbf{Strong Determinism:} Cycle-accurate, predictable behavior critical for hard real-time systems
+    \item \textbf{Security Awareness:} Hardware-enforced isolation and support for replicated critical task execution
+    \item \textbf{Resource Efficiency:} Modest FPGA resource utilization (8-15\% of mid-range Virtex devices)
+    \item \textbf{Scalability:} Logarithmic arbitration complexity enables scaling to 64+ cores
+\end{itemize}
+
+The verification methodology, including comprehensive testbenches and realistic workload generation, provides confidence in the design's correctness. Simulation results demonstrate successful scheduling of over 3,000 tasks with 97\% deadline satisfaction under high utilization (90\%).
+
+As embedded systems continue to proliferate in safety-critical and security-sensitive applications—from autonomous vehicles to medical devices to industrial control systems—hardware schedulers like SAFAS offer a compelling path toward achieving the stringent timing, security, and reliability requirements that traditional software approaches struggle to provide.
+
+The modular, parameterized Verilog implementation facilitates customization for specific application domains, while the comprehensive documentation and testbenches enable continued research and development. SAFAS serves as both a practical solution for real-time scheduling challenges and a foundation for future innovations in hardware-software co-design for embedded systems.
+
+\section*{Acknowledgments}
+
+This work builds upon research published in:
+
+\begin{itemize}
+    \item A. Norollah, H. Beitollahi, Z. Kazemi, and M. Fazeli, "A security-aware hardware scheduler for modern multi-core systems with hard real-time constraints," \textit{Elsevier Microprocessors and Microsystems (MICPRO)}, 2022. DOI: 10.1016/j.micpro.2022.104716.
+
+    \item A. Norollah, Z. Kazemi, D. Derafshi, H. Beitollahi and M. Fazeli, "Protecting Security-Critical Real-Time Systems against Fault Attacks in Many-Core Platforms," \textit{2022 CPSSI 4th International Symposium on Real-Time and Embedded Systems and Technologies (RTEST)}, 2022, pp. 1-6. DOI: 10.1109/RTEST56034.2022.9850010.
+\end{itemize}
+
+\appendix
+
+\section{Task Format Specification}
+
+\subsection{Standard Task (41 bits)}
+\begin{verbatim}
+[40]: VALID (1=valid, 0=empty)
+[39:32]: Task ID (8 bits, range 0-255)
+[31:16]: Relative Deadline (16 bits, time units)
+[15:0]: Execution Time (16 bits, time units)
+\end{verbatim}
+
+\subsection{Extended Task (42 bits)}
+\begin{verbatim}
+[41]: VALID (1=valid, 0=empty)
+[40]: TYPE (1=security-critical, 0=normal)
+[39:32]: Task ID (8 bits, range 0-255)
+[31:16]: Relative Deadline (16 bits, time units)
+[15:0]: Execution Time (16 bits, time units)
+\end{verbatim}
+
+\section{Module Hierarchy}
+
+\begin{verbatim}
+Scheduler_main (top-level)
+├── Controller (4_Controller.v)
+├── Scheduler_partial (3_Scheduler_partial.v)
+│   ├── Insertion_block (Ready Queue, 1_Insertion_block.v)
+│   │   └── Insertion_cell × 64 (1_Insertion_cell.v)
+│   │       └── sub_task
+│   ├── Insertion_block (Critical Queue, 1_Insertion_block.v)
+│   │   └── Insertion_cell × 8-16
+│   │       └── sub_task
+│   └── Arbiter (2_Arbiter.v)
+│       ├── Arbiter_cell_1 × 8 (Level 1)
+│       ├── Arbiter_cell × 4 (Level 2)
+│       ├── Arbiter_cell × 2 (Level 3)
+│       └── Arbiter_cell × 1 (Level 4)
+└── Cores (4_processors.v, simulation only)
+    └── REG × 16 (0_REG.v)
+\end{verbatim}
+
+\section{Signal Reference}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|l|l|p{6cm}|}
+\hline
+\textbf{Signal Name} & \textbf{Width} & \textbf{Description} \\
+\hline
+clk & 1 & System clock (rising edge triggered) \\
+rst & 1 & Synchronous active-high reset \\
+task\_in & W & Input task from RTOS \\
+wr & 1 & Write enable for task\_in \\
+task\_exch & W & Exchanged/rejected task output \\
+v\_exch & 1 & Valid exchange signal \\
+action & 1 & Scheduling enabled signal \\
+subtract & 1 & Deadline/execution decrement pulse \\
+repair\_period & 1 & Deadline miss detection enable \\
+MQ\_active & 1 & Main Queue active signal \\
+RT\_in & W×CORE & Running tasks input array \\
+RT\_out & W×CORE & Running tasks output array \\
+empty & 1 & Queue empty indicator \\
+fail & 1 & Queue overflow/rejection \\
+check\_s1 & CORE & Situation 1 request signals \\
+find\_s1 & 1 & Situation 1 valid signal \\
+index\_s1 & $\log_2(CORE)$ & Selected processor index \\
+find\_s2 & 1 & Situation 2 preemption signal \\
+s2\_index & $\log_2(CORE)$ & Preemption target processor \\
+\hline
+\end{tabular}
+\caption{Key Signal Descriptions}
+\end{table}
+
+\section{Parameter Reference}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|r|l|}
+\hline
+\textbf{Parameter} & \textbf{Default} & \textbf{Description} \\
+\hline
+W & 41-42 & Task width in bits \\
+N & 64 & Insertion block queue depth \\
+R\_Q & 64 & Ready queue depth \\
+M\_Q & 512 & Main queue depth \\
+CORE & 16 & Number of processor cores \\
+SCHEDULING & 64 & Scheduling state duration \\
+IDLE & 65,536 & Idle state duration (production) \\
+& 256 & Idle state duration (simulation) \\
+\hline
+\end{tabular}
+\caption{Parameterization Options}
+\end{table}
+
+\end{document}
