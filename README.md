@@ -32,28 +32,48 @@ The main structure of SAFAS is as follows:
 
 ![alt text](https://github.com/amin-norollah/safas/blob/main/MainArchitecture.jpg)
 
-## 🆕 New: Hybrid EDF + SRJF Scheduler
+## 🚀 New: Advanced Scheduling Algorithms
 
-This repository now includes a **novel Hybrid EDF + SRJF scheduling algorithm** with slack-based priority switching!
+This repository now includes **6 advanced scheduling algorithms** with comprehensive testing framework!
 
-### Key Features
-- ✓ Uses SRJF (Shortest Remaining Job First) for efficient execution
-- ✓ Switches to EDF (Earliest Deadline First) when slack < 2× execution time
-- ✓ Dynamic priority adjustment during runtime
-- ✓ 100% success rate with 0 missed deadlines in verification
-- ✓ Complete hardware implementation in Verilog
+### Algorithms Implemented
+
+1. **Hybrid EDF + SRJF** - Base hybrid scheduler (2× threshold)
+2. **Adaptive Threshold** - Configurable threshold (1.5×, 2×, 2.5×)
+3. **Multi-Level Priority** - 3-tier urgency system (Critical/Urgent/Normal)
+4. **LLF Hybrid** - Least Laxity First with SRJF fallback
+5. **Predictive Look-Ahead** - Proactive scheduling with future state prediction
+6. **Dynamic Adaptive** - Self-tuning threshold based on performance
+
+### 🏆 Performance Highlights
+
+All algorithms achieved **100% success rate** in comprehensive testing!
+
+| Algorithm | Avg Response Time | Best For |
+|-----------|-------------------|----------|
+| Pure EDF | 26.45 cycles 🥇 | Response time critical |
+| LLF Hybrid | 27.43 cycles 🥈 | Balanced performance |
+| Adaptive Threshold | 28.07 cycles | Variable workloads |
+| Multi-Level | 28.77 cycles | Mixed criticality |
 
 ### Quick Start
 ```bash
-# Run software verification
-python3 verification/hybrid_scheduler_verify.py
+cd verification
 
-# Analyze algorithm behavior
-python3 verification/analyze_algorithm.py
+# Run comprehensive regression tests (36 test combinations)
+python3 regression_tests.py
+
+# Run performance analysis with insights
+python3 performance_analysis.py
+
+# Demo advanced algorithms
+python3 advanced_schedulers.py
 ```
 
-### Documentation
-- **Quick Start**: [IMPLEMENTATION.md](IMPLEMENTATION.md)
+### 📚 Documentation
+- **Quick Reference**: [QUICK_REFERENCE.md](QUICK_REFERENCE.md) ⭐ Start here!
+- **Advanced Algorithms**: [ADVANCED_ALGORITHMS.md](ADVANCED_ALGORITHMS.md)
+- **Implementation Guide**: [IMPLEMENTATION.md](IMPLEMENTATION.md)
 - **Technical Details**: [HYBRID_SCHEDULER_README.md](HYBRID_SCHEDULER_README.md)
 - **Complete Summary**: [SUMMARY.md](SUMMARY.md)
 - **Academic Paper**: [documentation/hybrid_scheduler_report.tex](documentation/hybrid_scheduler_report.tex)
@@ -62,10 +82,20 @@ python3 verification/analyze_algorithm.py
 
 How to Use
 ------------
-The project consists of two parts:
+The project consists of three main components:
 
-1. Verilog code that requires software such as xilinx vivado for synthesis and simulation.
-2. c++ code that requires the c++ compiler or visual studio software for compiling c++ code that produces a sequence of real-time task characteristics To be able to test the hardware schedule.
+1. **Verilog Hardware Implementation**
+   - Requires Xilinx Vivado for synthesis and simulation
+   - FPGA-based hardware scheduler modules
+   - Located in `source/` directory
 
-### New: Hybrid Scheduler
-3. **Hybrid EDF+SRJF Scheduler** - Novel scheduling algorithm with slack-based priority switching (see files above)
+2. **Task Generator (C++)**
+   - Generates real-time task characteristics
+   - Requires C++ compiler or Visual Studio
+   - Located in `task generator/` directory
+
+3. **Advanced Scheduling Algorithms (Python)** 🆕
+   - 6 scheduling algorithms with comprehensive testing
+   - Regression test suite and performance analysis
+   - Located in `verification/` directory
+   - See [QUICK_REFERENCE.md](QUICK_REFERENCE.md) for details
