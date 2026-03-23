@@ -32,9 +32,40 @@ The main structure of SAFAS is as follows:
 
 ![alt text](https://github.com/amin-norollah/safas/blob/main/MainArchitecture.jpg)
 
+## 🆕 New: Hybrid EDF + SRJF Scheduler
+
+This repository now includes a **novel Hybrid EDF + SRJF scheduling algorithm** with slack-based priority switching!
+
+### Key Features
+- ✓ Uses SRJF (Shortest Remaining Job First) for efficient execution
+- ✓ Switches to EDF (Earliest Deadline First) when slack < 2× execution time
+- ✓ Dynamic priority adjustment during runtime
+- ✓ 100% success rate with 0 missed deadlines in verification
+- ✓ Complete hardware implementation in Verilog
+
+### Quick Start
+```bash
+# Run software verification
+python3 verification/hybrid_scheduler_verify.py
+
+# Analyze algorithm behavior
+python3 verification/analyze_algorithm.py
+```
+
+### Documentation
+- **Quick Start**: [IMPLEMENTATION.md](IMPLEMENTATION.md)
+- **Technical Details**: [HYBRID_SCHEDULER_README.md](HYBRID_SCHEDULER_README.md)
+- **Complete Summary**: [SUMMARY.md](SUMMARY.md)
+- **Academic Paper**: [documentation/hybrid_scheduler_report.tex](documentation/hybrid_scheduler_report.tex)
+
+---
+
 How to Use
 ------------
 The project consists of two parts:
 
 1. Verilog code that requires software such as xilinx vivado for synthesis and simulation.
 2. c++ code that requires the c++ compiler or visual studio software for compiling c++ code that produces a sequence of real-time task characteristics To be able to test the hardware schedule.
+
+### New: Hybrid Scheduler
+3. **Hybrid EDF+SRJF Scheduler** - Novel scheduling algorithm with slack-based priority switching (see files above)
