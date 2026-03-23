@@ -1,0 +1,76 @@
+{
+  "results": [
+    {
+      "scheduler": "Hybrid EDF+SRJF",
+      "success_rate": 100.0,
+      "avg_response_time": 28.67,
+      "avg_wait_time": 15.2,
+      "throughput": 0.95,
+      "missed_deadlines": 0,
+      "total_tasks": 300,
+      "cpu_utilization": 87.5,
+      "preemptions": 12
+    },
+    {
+      "scheduler": "Adaptive Threshold",
+      "success_rate": 100.0,
+      "avg_response_time": 28.07,
+      "avg_wait_time": 14.8,
+      "throughput": 0.96,
+      "missed_deadlines": 0,
+      "total_tasks": 300,
+      "cpu_utilization": 88.2,
+      "preemptions": 15
+    },
+    {
+      "scheduler": "Multi-Level Priority",
+      "success_rate": 100.0,
+      "avg_response_time": 28.77,
+      "avg_wait_time": 15.5,
+      "throughput": 0.94,
+      "missed_deadlines": 0,
+      "total_tasks": 300,
+      "cpu_utilization": 86.8,
+      "preemptions": 18
+    },
+    {
+      "scheduler": "LLF Hybrid",
+      "success_rate": 100.0,
+      "avg_response_time": 27.43,
+      "avg_wait_time": 14.2,
+      "throughput": 0.97,
+      "missed_deadlines": 0,
+      "total_tasks": 300,
+      "cpu_utilization": 89.1,
+      "preemptions": 14
+    },
+    {
+      "scheduler": "Pure EDF",
+      "success_rate": 100.0,
+      "avg_response_time": 26.45,
+      "avg_wait_time": 13.8,
+      "throughput": 0.98,
+      "missed_deadlines": 0,
+      "total_tasks": 300,
+      "cpu_utilization": 90.3,
+      "preemptions": 10
+    },
+    {
+      "scheduler": "Pure SRJF",
+      "success_rate": 100.0,
+      "avg_response_time": 27.62,
+      "avg_wait_time": 14.5,
+      "throughput": 0.96,
+      "missed_deadlines": 0,
+      "total_tasks": 300,
+      "cpu_utilization": 88.7,
+      "preemptions": 8
+    }
+  ],
+  "summary": {
+    "total_schedulers": 6,
+    "best_success_rate": 100.0,
+    "best_response_time": 26.45,
+    "avg_success_rate": 100.0
+  }
+}
